@@ -30,17 +30,15 @@ validateEnv();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ── CORS ──────────────────────────────────────────────────────────────────────
-const corsOptions = {
-  origin: process.env.FRONTEND_URL
-    ? [process.env.FRONTEND_URL, 'http://localhost:5173']
-    : '*',
+// ── CORS ────────────────────────────────────────────────────────────────
+// Allow all origins — this is an internal dashboard with no cookie/auth
+// No credentials are used, so wildcard origin is safe and avoids
+// CORS failures when the Vercel URL changes between deployments
+app.use(cors({
+  origin: '*',
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
-};
-
-app.use(cors(corsOptions));
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
