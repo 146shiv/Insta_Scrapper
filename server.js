@@ -36,7 +36,13 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-// ── Health Check ──────────────────────────────────────────────────────────────
+// ── Root Route (Render pings GET/HEAD / for uptime checks by default) ─────────
+// Without this, Render gets a 404, marks the service unhealthy, and restarts it
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'ok', service: 'Studybo Instagram Intelligence API' });
+});
+
+// ── Health Check (detailed) ───────────────────────────────────────────────────
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
