@@ -14,8 +14,8 @@ services:
     # Install dependencies
     buildCommand: npm install
 
-    # Start the server — server.js is at the PROJECT ROOT, not in /src
-    startCommand: node server.js
+    # Start the server — entry point is now src/server.js
+    startCommand: node src/server.js
 
     # Health check endpoint Render uses to verify the service is up
     healthCheckPath: /health
