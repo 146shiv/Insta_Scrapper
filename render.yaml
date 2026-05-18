@@ -1,0 +1,28 @@
+# render.yaml
+# Render deployment configuration for Studybo Instagram Intelligence Backend
+# Docs: https://render.com/docs/yaml-spec
+
+services:
+  - type: web
+    name: studybo-api
+    runtime: node
+    plan: free
+
+    # Root of the backend (the repo root, NOT /frontend)
+    rootDir: .
+
+    # Install dependencies
+    buildCommand: npm install
+
+    # Start the server — server.js is at the PROJECT ROOT, not in /src
+    startCommand: node server.js
+
+    # Health check endpoint Render uses to verify the service is up
+    healthCheckPath: /health
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # All other secrets (MONGODB_URI, APIFY_TOKEN, etc.) must be added
+      # manually in the Render dashboard under Environment > Environment Variables
+      # DO NOT put secrets in this file
