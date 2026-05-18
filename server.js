@@ -3,11 +3,8 @@
  * Start command: node server.js
  */
 
-// ── Catch any startup crash BEFORE logger is available ────────────────────────
-// This ensures errors during require() are visible in Render logs
 process.on('uncaughtException', (err) => {
-  console.error('[FATAL] Uncaught Exception:', err.message);
-  console.error(err.stack);
+  console.error('[FATAL] Uncaught Exception:', err.message, err.stack);
   process.exit(1);
 });
 
@@ -16,22 +13,17 @@ process.on('unhandledRejection', (reason) => {
   process.exit(1);
 });
 
-console.log('[BOOT] Starting Studybo API...');
-
 require('dotenv').config();
-console.log('[BOOT] dotenv loaded');
 
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
-console.log('[BOOT] express/cors/morgan loaded');
 
 const { connectDatabase } = require('./src/config/database');
 const { validateEnv } = require('./src/config/env');
 const routes = require('./src/routes/index');
 const logger = require('./src/utils/logger');
 const { startScheduler } = require('./src/jobs/scheduler');
-console.log('[BOOT] all modules loaded');
 
 validateEnv();
 
@@ -53,12 +45,12 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-// ── Root Route (Render pings GET/HEAD / for uptime checks) ────────────────────
+// ── Root (Render health check pings GET / and HEAD /) ─────────────────────────
 app.get('/', (req, res) => {
   res.status(200).json({ status: 'ok', service: 'Studybo Instagram Intelligence API' });
 });
 
-// ── Health Check ──────────────────────────────────────────────────────────────
+// ── Detailed Health Check ─────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -85,20 +77,22 @@ app.use((err, req, res, next) => {
   });
 });
 
-const bootstrap = async () => {
-  try {
-    await connectDatabase();
-    app.listen(PORT, () => {
-      logger.info(`🚀 Studybo Intelligence API running on http://localhost:${PORT}`);
-      logger.info(`📊 Health: http://localhost:${PORT}/health`);
-      logger.info(`📡 API Base: http://localhost:${PORT}/api`);
-    });
-    startScheduler();
-  } catch (err) {
-    console.error('[FATAL] Bootstrap failed:', err.message);
-    console.error(err.stack);
-    process.exit(1);
-  }
-};
+// ── Start server FIRST so Render health check gets an immediate 200 ───────────
+// Then connect to MongoDB in the background.
+// This prevents Render from killing the process because it thinks it's unhealthy
+// during the ~1 second it takes for MongoDB Atlas to connect.
+app.listen(PORT, () => {
+  logger.info(`🚀 Studybo Intelligence API running on port ${PORT}`);
+  logger.info(`📊 Health: http://localhost:${PORT}/health`);
+  logger.info(`📡 API Base: http://localhost:${PORT}/api`);
 
-bootstrap();
+  // Connect to MongoDB and start scheduler AFTER server is already listening
+  connectDatabase()
+    .then(() => {
+      startScheduler();
+    })
+    .catch((err) => {
+      logger.error(`Failed to connect to MongoDB: ${err.message}`);
+      // Don't exit — server stays up for health checks, retries internally
+    });
+});
