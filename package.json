@@ -9,10 +9,17 @@
     "lint": "echo \"No linter configured\"",
     "test": "echo \"No tests configured\""
   },
-  "keywords": ["instagram", "scraper", "apify", "studybo", "marketing-intelligence"],
+  "keywords": [
+    "instagram",
+    "scraper",
+    "apify",
+    "studybo",
+    "marketing-intelligence"
+  ],
   "author": "Studybo Team",
   "license": "MIT",
   "dependencies": {
+    "apify-client": "^2.23.3",
     "axios": "^1.6.8",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
