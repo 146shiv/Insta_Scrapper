@@ -23,11 +23,24 @@ validateEnv();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ── CORS Configuration ───────────────────────────────────────────────────────
+// In production: set FRONTEND_URL env var to your Vercel URL
+// e.g. FRONTEND_URL=https://studybo-dashboard.vercel.app
+const corsOptions = {
+  origin: process.env.FRONTEND_URL
+    ? [process.env.FRONTEND_URL, 'http://localhost:5173']
+    : '*', // Allow all origins in development
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+};
+
 // ── Middleware ────────────────────────────────────────────────────────────────
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use(morgan('dev'));
+// Use 'combined' in production (includes IP for Render logs), 'dev' locally
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // ── Health Check (top-level, no /api prefix) ──────────────────────────────────
 app.get('/health', (req, res) => {
