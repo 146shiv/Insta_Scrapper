@@ -1,15 +1,27 @@
 # render.yaml
 # Render deployment configuration for Studybo Instagram Intelligence Backend
+# Docs: https://render.com/docs/yaml-spec
 
 services:
   - type: web
     name: studybo-api
     runtime: node
     plan: free
+
+    # Root of the backend (the repo root, NOT /frontend)
     rootDir: .
-    buildCommand: npm install
+
+    # Install dependencies
+    buildCommand: npm install --production
+
+    # Start command — server.js is at the REPO ROOT
     startCommand: node server.js
+
+    # Health check — server listens immediately before DB connects, so this returns 200 fast
+    healthCheckPath: /
 
     envVars:
       - key: NODE_ENV
         value: production
+
+
