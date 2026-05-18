@@ -1,20 +1,37 @@
 /**
  * Studybo Instagram Intelligence — Main Server Entry Point
- * =========================================================
  * Start command: node server.js
  */
 
+// ── Catch any startup crash BEFORE logger is available ────────────────────────
+// This ensures errors during require() are visible in Render logs
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught Exception:', err.message);
+  console.error(err.stack);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled Rejection:', reason);
+  process.exit(1);
+});
+
+console.log('[BOOT] Starting Studybo API...');
+
 require('dotenv').config();
+console.log('[BOOT] dotenv loaded');
 
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
+console.log('[BOOT] express/cors/morgan loaded');
 
 const { connectDatabase } = require('./src/config/database');
 const { validateEnv } = require('./src/config/env');
 const routes = require('./src/routes/index');
 const logger = require('./src/utils/logger');
 const { startScheduler } = require('./src/jobs/scheduler');
+console.log('[BOOT] all modules loaded');
 
 validateEnv();
 
@@ -36,13 +53,12 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-// ── Root Route (Render pings GET/HEAD / for uptime checks by default) ─────────
-// Without this, Render gets a 404, marks the service unhealthy, and restarts it
+// ── Root Route (Render pings GET/HEAD / for uptime checks) ────────────────────
 app.get('/', (req, res) => {
   res.status(200).json({ status: 'ok', service: 'Studybo Instagram Intelligence API' });
 });
 
-// ── Health Check (detailed) ───────────────────────────────────────────────────
+// ── Health Check ──────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -79,7 +95,8 @@ const bootstrap = async () => {
     });
     startScheduler();
   } catch (err) {
-    logger.error(`Failed to bootstrap server: ${err.message}`);
+    console.error('[FATAL] Bootstrap failed:', err.message);
+    console.error(err.stack);
     process.exit(1);
   }
 };
