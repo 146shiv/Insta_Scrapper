@@ -1,0 +1,31 @@
+{
+  "name": "studybo-instagram-intelligence",
+  "version": "1.0.0",
+  "description": "Instagram trend discovery and marketing intelligence system for Studybo",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "lint": "echo \"No linter configured\"",
+    "test": "echo \"No tests configured\""
+  },
+  "keywords": ["instagram", "scraper", "apify", "studybo", "marketing-intelligence"],
+  "author": "Studybo Team",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.8",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "json2csv": "^6.0.0-alpha.2",
+    "mongoose": "^8.3.4",
+    "morgan": "^1.10.0",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
