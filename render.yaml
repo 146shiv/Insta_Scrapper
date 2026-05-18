@@ -12,13 +12,13 @@ services:
     rootDir: .
 
     # Install dependencies
-    buildCommand: npm install
+    buildCommand: npm install --production
 
     # Start command — server.js is at the REPO ROOT
     startCommand: node server.js
 
-    # Health check endpoint Render uses to verify the service is up
-    healthCheckPath: /health
+    # Health check — server listens immediately before DB connects, so this returns 200 fast
+    healthCheckPath: /
 
     envVars:
       - key: NODE_ENV
