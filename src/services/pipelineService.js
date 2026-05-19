@@ -23,6 +23,7 @@ const { filterPosts } = require('./filterService');
 const { rankPosts } = require('./rankingService');
 const { processCreatorBatch } = require('./creatorService');
 const { updateBatchHashtagStats } = require('./hashtagService');
+const { buildCrossHashtagMap, computeCrossHashtagBonus, computeRecencyBonus } = require('./trendingService');
 const { filterNewPosts } = require('../utils/duplicateCheck');
 const RawPost = require('../models/RawPost');
 const FilteredPost = require('../models/FilteredPost');
@@ -47,6 +48,7 @@ const normalizeRawPost = (item, sourceHashtag, scrapeJobId) => {
     caption: item.caption || (item.caption && item.caption.text) || '',
     displayUrl: item.displayUrl || item.thumbnailUrl || item.previewUrl,
     type: item.type || item.__typename || 'Unknown',
+    productType: item.productType || '',
     isVideo: item.isVideo || item.is_video || false,
     likesCount: item.likesCount || item.likes || 0,
     commentsCount: item.commentsCount || item.comments || 0,
@@ -96,6 +98,7 @@ const saveFilteredPost = async (post, rawPostId) => {
       ownerId: post.ownerId,
       ownerFollowersCount: followers,
       type: post.type,
+      productType: post.productType || '',
       isReel: meta.isReel || false,
       isCarousel: meta.isCarousel || false,
       isVideo: meta.isVideo || false,
@@ -109,9 +112,15 @@ const saveFilteredPost = async (post, rawPostId) => {
       scoreBreakdown: score.scoreBreakdown || {},
       captionKeywords: meta.captionKeywords || [],
       hasEmotionalHook: meta.hasEmotionalHook || false,
+      hookPhrase: meta.hookPhrase || null,
       hasPovHook: meta.hasPovHook || false,
+      motivationalScore: meta.motivationalScore || 0,
       creatorType: meta.creatorType || 'unknown',
       isMicroCreator: meta.isMicroCreator || false,
+      // Trending intelligence fields
+      crossHashtagCount: score.crossHashtagCount || 0,
+      crossHashtagTags: score.crossHashtagTags || [],
+      recencyLabel: score.recencyLabel || 'unknown',
       postedAt: post.postedAt,
       processedAt: new Date(),
     });
@@ -157,9 +166,13 @@ const runPipeline = async (hashtags, options = {}) => {
     const rawItems = await scrapeHashtags(hashtags, options);
     result.rawFetched = rawItems.length;
 
-    // ── Step 2: Deduplicate ───────────────────────────────────────
+    // ── Step 2: Deduplicate ─────────────────────────────────────
     const { newPosts, skippedCount } = await filterNewPosts(rawItems);
     result.duplicatesSkipped = skippedCount;
+
+    // ── Step 2b: Build cross-hashtag trending map ──────────────────
+    // Done on all raw items (before dedup) to capture cross-hashtag signal
+    const crossHashtagMap = buildCrossHashtagMap(rawItems);
 
     // ── Step 3: Save raw posts ────────────────────────────────────
     const scrapeJobId = rawItems[0]?._scrapeRunId || 'manual';
@@ -182,13 +195,27 @@ const runPipeline = async (hashtags, options = {}) => {
       }
     }
 
-    // ── Step 4: Filter ────────────────────────────────────────────
+    // ── Step 4: Filter ─────────────────────────────────────────
     const { passed, rejected } = filterPosts(newPosts);
     result.filtered = passed.length;
     result.rejected = rejected.length;
 
-    // ── Step 5: Rank ──────────────────────────────────────────────
-    const ranked = rankPosts(passed);
+    // ── Step 4b: Inject trending metadata per post ────────────────
+    // Attach recency + cross-hashtag bonuses before ranking
+    const passedWithTrending = passed.map((post) => {
+      const shortCode = post.shortCode || post.shortcode;
+      const { recencyBonus, recencyLabel } = computeRecencyBonus(post.postedAt || post.timestamp);
+      const { crossHashtagBonus, crossHashtagCount, crossHashtagTags } =
+        computeCrossHashtagBonus(shortCode, crossHashtagMap);
+
+      return {
+        ...post,
+        _trending: { recencyBonus, recencyLabel, crossHashtagBonus, crossHashtagCount, crossHashtagTags },
+      };
+    });
+
+    // ── Step 5: Rank ───────────────────────────────────────────
+    const ranked = rankPosts(passedWithTrending);
     result.ranked = ranked.length;
 
     // ── Step 6: Save filtered posts ───────────────────────────────

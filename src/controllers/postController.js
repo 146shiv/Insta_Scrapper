@@ -121,6 +121,72 @@ const getCarousels = async (req, res) => {
 };
 
 /**
+ * GET /api/posts/trending-reels
+ * Returns trending reels — sorted by contentScore, preferring:
+ *  - Reel format
+ *  - Recent posts (fresh / very_fresh)
+ *  - Cross-hashtag viral posts
+ *
+ * Query params:
+ *  limit         (default 20, max 100)
+ *  page          (default 1)
+ *  recency       (optional: 'very_fresh' | 'fresh' | 'recent') — filter by recencyLabel
+ *  minCrossHashtag (optional: number) — only include posts appearing in ≥N productivity hashtags
+ *  creatorType   (optional: 'student' | 'productivity_creator' | 'educational')
+ */
+const getTrendingReels = async (req, res) => {
+  try {
+    const { limit, page, skip } = getPagination(req.query);
+    const query = { isReel: true };
+
+    // Optional: filter by recency label
+    if (req.query.recency) {
+      const validRecency = ['very_fresh', 'fresh', 'recent', 'older'];
+      if (validRecency.includes(req.query.recency)) {
+        query.recencyLabel = req.query.recency;
+      }
+    }
+
+    // Optional: filter by cross-hashtag count
+    const minCrossHashtag = parseInt(req.query.minCrossHashtag || '0', 10);
+    if (minCrossHashtag > 0) {
+      query.crossHashtagCount = { $gte: minCrossHashtag };
+    }
+
+    // Optional: filter by creator type
+    if (req.query.creatorType) {
+      const validTypes = ['student', 'productivity_creator', 'educational', 'general'];
+      if (validTypes.includes(req.query.creatorType)) {
+        query.creatorType = req.query.creatorType;
+      }
+    }
+
+    const [posts, total] = await Promise.all([
+      FilteredPost.find(query)
+        .sort({ contentScore: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select('-rawData -__v')
+        .lean(),
+      FilteredPost.countDocuments(query),
+    ]);
+
+    return res.json({
+      success: true,
+      data: posts,
+      pagination: { total, page, limit, pages: Math.ceil(total / limit) },
+      meta: {
+        filters: { recency: req.query.recency, minCrossHashtag, creatorType: req.query.creatorType },
+        description: 'Trending reels ranked by contentScore (includes recency + cross-hashtag bonuses)',
+      },
+    });
+  } catch (err) {
+    logger.error(`getTrendingReels error: ${err.message}`);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+/**
  * GET /api/posts/export
  * Export top posts as CSV file download.
  *
@@ -148,4 +214,4 @@ const exportPosts = async (req, res) => {
   }
 };
 
-module.exports = { getTopPosts, getReels, getCarousels, exportPosts };
+module.exports = { getTopPosts, getReels, getCarousels, exportPosts, getTrendingReels };

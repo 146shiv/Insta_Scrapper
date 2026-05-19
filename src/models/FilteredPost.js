@@ -55,6 +55,10 @@ const filteredPostSchema = new mongoose.Schema(
       enum: ['GraphImage', 'GraphVideo', 'GraphSidecar', 'Reel', 'Image', 'Video', 'Sidecar', 'Unknown'],
       default: 'Unknown',
     },
+    productType: {
+      type: String, // Raw productType from Apify (e.g. 'clips', 'feed', 'igtv')
+      default: '',
+    },
     isReel: {
       type: Boolean,
       default: false,
@@ -106,10 +110,34 @@ const filteredPostSchema = new mongoose.Schema(
       isReel: { type: Number, default: 0 },
       isCarousel: { type: Number, default: 0 },
       povHook: { type: Number, default: 0 },
-      emotionalCaption: { type: Number, default: 0 },
+      emotionalHook: { type: Number, default: 0 },
+      motivationalLanguage: { type: Number, default: 0 },
       studyCreator: { type: Number, default: 0 },
+      productivityCreator: { type: Number, default: 0 },
       hashtagRelevance: { type: Number, default: 0 },
+      recencyBonus: { type: Number, default: 0 },
+      crossHashtagBonus: { type: Number, default: 0 },
       coachingPenalty: { type: Number, default: 0 },
+    },
+
+    // ── Trending Intelligence ─────────────────────────────────────
+    crossHashtagCount: {
+      type: Number,
+      default: 0, // How many productivity hashtags this post appeared under
+      index: true,
+    },
+    crossHashtagTags: {
+      type: [String],
+      default: [], // Which productivity hashtags this post appeared under
+    },
+    recencyLabel: {
+      type: String,
+      enum: ['very_fresh', 'fresh', 'recent', 'older', 'unknown'],
+      default: 'unknown',
+    },
+    motivationalScore: {
+      type: Number,
+      default: 0, // Count of motivational keywords matched in caption
     },
 
     // ── Caption Analysis ──────────────────────────────────────────
@@ -121,6 +149,10 @@ const filteredPostSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    hookPhrase: {
+      type: String, // The actual hook phrase detected (e.g. 'pov:', 'how i study')
+      default: null,
+    },
     hasPovHook: {
       type: Boolean,
       default: false,
@@ -129,7 +161,7 @@ const filteredPostSchema = new mongoose.Schema(
     // ── Creator Classification ─────────────────────────────────────
     creatorType: {
       type: String,
-      enum: ['student', 'educational', 'micro_influencer', 'general', 'unknown'],
+      enum: ['student', 'educational', 'productivity_creator', 'micro_influencer', 'general', 'unknown'],
       default: 'unknown',
     },
     isMicroCreator: {
@@ -170,6 +202,10 @@ filteredPostSchema.index({ isCarousel: 1, contentScore: -1 });
 filteredPostSchema.index({ ownerUsername: 1 });
 filteredPostSchema.index({ reviewStatus: 1, contentScore: -1 });
 filteredPostSchema.index({ processedAt: -1 });
+// Trending intelligence indexes
+filteredPostSchema.index({ isReel: 1, postedAt: -1, contentScore: -1 }); // trending reels
+filteredPostSchema.index({ crossHashtagCount: -1, contentScore: -1 });   // cross-hashtag viral posts
+filteredPostSchema.index({ recencyLabel: 1, isReel: 1, contentScore: -1 }); // fresh reels
 
 const FilteredPost = mongoose.model('FilteredPost', filteredPostSchema);
 

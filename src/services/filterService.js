@@ -5,8 +5,9 @@
  *
  * Rules:
  *  REJECT  — posts with coaching/ad keywords in caption
- *  PREFER  — posts with student/study keywords in caption
+ *  PREFER  — posts with student/productivity/discipline keywords
  *  DETECT  — content type (reel, carousel) and creator type
+ *  SIGNAL  — emotional hook phrases, motivational language
  *
  * Returns a filtered array with enriched metadata attached.
  */
@@ -24,6 +25,8 @@ const REJECT_KEYWORDS = [
   'call now',
   'enroll today',
   'enroll now',
+  'paid batch',
+  'register today',
   'batch starts',
   'limited seats',
   'join now',
@@ -32,22 +35,69 @@ const REJECT_KEYWORDS = [
   'trial class',
   'scholarship test',
   'scholarship exam',
+  'contact for admission',
+  'offline batch',
+  'online batch starting',
+  'course available',
+  'buy now',
+  'link in bio for course',
+];
+
+// ── Motivational / Productivity Positive Signals ──────────────────────────────
+// Tier-1: High-value productivity & discipline hooks (stronger signal)
+const MOTIVATIONAL_KEYWORDS = [
+  'pov',
+  'discipline',
+  'consistency',
+  'study routine',
+  'deep work',
+  'deepwork',
+  'locked in',
+  'grind',
+  'focus',
+  'academic comeback',
+  'exam prep',
+  'no excuses',
+  'self improvement',
+  'selfimprovement',
+  'dopamine detox',
+  'dopaminedetox',
+  'productive day',
+  'study motivation',
+  'studymotivation',
+  'late night study',
+  'night study',
+  'monk mode',
+  'monkmode',
+  'wake up early',
+  'morning routine',
+  'study session',
+  'grind mindset',
+  'grindmindset',
+  'silent grind',
+  'no phone study',
+  'focused study',
+  'mental toughness',
+  'hard work pays',
+  'academic goals',
+  'study hard',
+  'win the day',
+  'back to study',
+  'get back on track',
+  'accountability',
+  'student grind',
+  'student mindset',
 ];
 
 // ── Prefer Keywords (case-insensitive) ───────────────────────────────────────
-// Posts with these keywords indicate authentic student content
+// Posts with these keywords indicate authentic student/productivity content
 const PREFER_KEYWORDS = [
-  'pov',
+  ...MOTIVATIONAL_KEYWORDS,
   'exam',
   'revision',
   'burnout',
   'productivity',
-  'study routine',
   'motivation',
-  'night study',
-  'discipline',
-  'focus',
-  'consistency',
   'study with me',
   'studywithme',
   'my study',
@@ -56,8 +106,43 @@ const PREFER_KEYWORDS = [
   'note taking',
   'notetaking',
   'self study',
-  'study session',
   'library',
+  'topper',
+  'rank',
+  'syllabus',
+  'study plan',
+  'time management',
+  'pomodoro',
+  'flashcards',
+  'revision strategy',
+];
+
+// ── Emotional Hook Phrases ────────────────────────────────────────────────────
+// Phrases that indicate strong narrative / POV emotional hook
+const EMOTIONAL_HOOK_PHRASES = [
+  'pov:',
+  'pov i',
+  'day in my life',
+  'study with me',
+  'come study',
+  'come grind',
+  'watch me study',
+  'real student',
+  'honest study',
+  'my honest',
+  'the truth about',
+  'no one told me',
+  'i wish i knew',
+  'changed my life',
+  'transformed my',
+  'before after study',
+  'how i study',
+  'my secret',
+  'this is why',
+  'stop doing this',
+  'do this instead',
+  'why i failed',
+  'how i went from',
 ];
 
 // ── Student/Educational Creator Bio Keywords ──────────────────────────────────
@@ -76,6 +161,11 @@ const STUDENT_BIO_KEYWORDS = [
   'class 11',
   'engineering student',
   'medical student',
+  'ias aspirant',
+  'ca student',
+  'law student',
+  'mba student',
+  'college student',
 ];
 
 const EDUCATIONAL_BIO_KEYWORDS = [
@@ -88,6 +178,27 @@ const EDUCATIONAL_BIO_KEYWORDS = [
   'notes',
   'study tips',
   'academic',
+  'productivity coach',
+  'motivation creator',
+  'content creator',
+  'student creator',
+];
+
+// ── Productivity/Self-Improvement Creator Bio Keywords ───────────────────────
+const PRODUCTIVITY_BIO_KEYWORDS = [
+  'productivity',
+  'self improvement',
+  'selfimprovement',
+  'discipline',
+  'focus',
+  'deep work',
+  'deepwork',
+  'mindset',
+  'grind',
+  'monk mode',
+  'monkmode',
+  'consistency',
+  'self development',
 ];
 
 /**
@@ -116,6 +227,34 @@ const shouldReject = (caption) => {
 };
 
 /**
+ * Detect if a caption has a strong emotional/POV hook.
+ * Checks opening lines for hook patterns.
+ *
+ * @param {string} caption
+ * @returns {{ hasEmotionalHook: boolean, hookPhrase: string|null }}
+ */
+const detectEmotionalHook = (caption) => {
+  if (!caption) return { hasEmotionalHook: false, hookPhrase: null };
+
+  const lower = caption.toLowerCase().trimStart();
+
+  // Check for explicit hook phrases
+  for (const phrase of EMOTIONAL_HOOK_PHRASES) {
+    if (lower.includes(phrase)) {
+      return { hasEmotionalHook: true, hookPhrase: phrase };
+    }
+  }
+
+  // Fallback: 2+ motivational keywords = emotional hook
+  const motMatches = findMatchingKeywords(caption, MOTIVATIONAL_KEYWORDS);
+  if (motMatches.length >= 2) {
+    return { hasEmotionalHook: true, hookPhrase: null };
+  }
+
+  return { hasEmotionalHook: false, hookPhrase: null };
+};
+
+/**
  * Detect post type: reel, carousel (sidecar), or image.
  *
  * @param {Object} post - Raw post from Apify
@@ -124,13 +263,16 @@ const shouldReject = (caption) => {
 const detectPostType = (post) => {
   const type = post.type || post.__typename || '';
   const isVideo = post.isVideo || post.is_video || false;
+  const productType = (post.productType || '').toLowerCase();
 
   // Handle both old Graph-prefixed names and newer short-form names
+  // productType === 'clips' is the definitive reel indicator from Apify
   const isReel =
     type === 'GraphVideo' ||
     type === 'Video' ||
     type === 'Reel' ||
-    post.productType === 'clips' ||
+    productType === 'clips' ||
+    productType === 'reel' ||
     (isVideo && post.videoViewCount > 0);
 
   const isCarousel =
@@ -143,6 +285,7 @@ const detectPostType = (post) => {
 
 /**
  * Classify creator type from bio and username.
+ * Now recognizes productivity/self-improvement creators as a distinct type.
  *
  * @param {string} bio - Creator bio text
  * @param {string} username - Creator username
@@ -153,6 +296,9 @@ const classifyCreatorType = (bio = '', username = '') => {
 
   if (findMatchingKeywords(combined, STUDENT_BIO_KEYWORDS).length > 0) {
     return 'student';
+  }
+  if (findMatchingKeywords(combined, PRODUCTIVITY_BIO_KEYWORDS).length > 0) {
+    return 'productivity_creator';
   }
   if (findMatchingKeywords(combined, EDUCATIONAL_BIO_KEYWORDS).length > 0) {
     return 'educational';
@@ -169,6 +315,18 @@ const classifyCreatorType = (bio = '', username = '') => {
  */
 const isMicroCreator = (followers) => {
   return followers >= 1000 && followers <= 100000;
+};
+
+/**
+ * Count how many motivational keywords appear in a caption.
+ * Used to score trending reel language quality.
+ *
+ * @param {string} caption
+ * @returns {{ count: number, matched: string[] }}
+ */
+const scoreMotivationalLanguage = (caption) => {
+  const matched = findMatchingKeywords(caption, MOTIVATIONAL_KEYWORDS);
+  return { count: matched.length, matched };
 };
 
 /**
@@ -199,13 +357,19 @@ const filterPosts = (rawPosts) => {
     // ── Step 3: Find preferred keywords ──────────────────────────
     const matchedPreferKeywords = findMatchingKeywords(caption, PREFER_KEYWORDS);
     const hasPovHook = caption.toLowerCase().includes('pov');
-    const hasEmotionalHook = matchedPreferKeywords.length >= 2;
 
-    // ── Step 4: Classify creator ──────────────────────────────────
+    // ── Step 4: Detect emotional/motivational hooks ───────────────
+    const { hasEmotionalHook, hookPhrase } = detectEmotionalHook(caption);
+
+    // ── Step 5: Score motivational language ──────────────────────
+    const { count: motivationalScore, matched: motivationalKeywords } =
+      scoreMotivationalLanguage(caption);
+
+    // ── Step 6: Classify creator ──────────────────────────────────
     const creatorType = classifyCreatorType(bio, username);
     const micro = isMicroCreator(followers);
 
-    // ── Step 5: Attach enrichment metadata ───────────────────────
+    // ── Step 7: Attach enrichment metadata ───────────────────────
     passed.push({
       ...post,
       _filter: {
@@ -215,6 +379,9 @@ const filterPosts = (rawPosts) => {
         captionKeywords: matchedPreferKeywords,
         hasPovHook,
         hasEmotionalHook,
+        hookPhrase: hookPhrase || null,
+        motivationalScore,
+        motivationalKeywords,
         creatorType,
         isMicroCreator: micro,
       },
@@ -230,8 +397,12 @@ module.exports = {
   filterPosts,
   shouldReject,
   detectPostType,
+  detectEmotionalHook,
   classifyCreatorType,
   isMicroCreator,
+  scoreMotivationalLanguage,
   REJECT_KEYWORDS,
   PREFER_KEYWORDS,
+  MOTIVATIONAL_KEYWORDS,
+  EMOTIONAL_HOOK_PHRASES,
 };

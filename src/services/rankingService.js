@@ -3,16 +3,24 @@
  * ─────────────────────────────────────────────────────────────────
  * Computes a contentScore for each filtered post.
  *
- * Scoring Matrix:
- *  +20  — Is a Reel (highest engagement format)
+ * Scoring Matrix (total max ≈ 175 points):
+ *  +30  — Is a Reel / video (highest viral format)
  *  +10  — Is a Carousel (multi-image, swipeable)
  *  +15  — Has POV hook in caption ("POV: ...")
- *  +10  — Has emotional/motivational keywords (≥2 matched)
- *  +20  — Creator identified as student or educational type
+ *  +15  — Has a strong emotional hook phrase detected
+ *  +5   — Per motivational keyword (capped at +20 from this source)
+ *  +20  — Creator identified as student or educational
+ *  +25  — Creator identified as productivity/discipline creator
  *  +15  — High hashtag relevance (≥3 target hashtags in post)
- *  -50  — Coaching/ad detected (should not reach here, safety net)
+ *  +25  — Recency bonus (injected by pipeline via trendingService)
+ *  +30  — Cross-hashtag bonus (injected by pipeline via trendingService)
+ *  -50  — Coaching/ad detected (safety net — should not reach here)
  *
  * All scores are non-negative (clamped at 0 minimum).
+ *
+ * NOTE: recencyBonus and crossHashtagBonus are NOT computed here —
+ *       they are pre-computed by trendingService and injected into
+ *       _score by the pipeline before rankPosts() is called.
  */
 
 const logger = require('../utils/logger');
@@ -20,29 +28,42 @@ const { REJECT_KEYWORDS } = require('./filterService');
 
 // ── Target Hashtags for Relevance Scoring ─────────────────────────────────────
 const TARGET_HASHTAGS = [
+  // Core productivity & discipline
+  'productivity',
+  'studymotivation',
+  'discipline',
+  'deepwork',
+  'selfimprovement',
+  'focus',
+  'consistency',
+  'grindmindset',
+  'nightstudy',
+  'dopaminedetox',
+  'monkmode',
+  'studentlife',
   'studygram',
   'studywithme',
+  // Legacy study tags
   'neetprep',
   'jee2026',
   'jee2025',
   'upsc',
-  'productivity',
-  'deepwork',
   'notetaking',
-  'studymotivation',
   'studylife',
-  'studentlife',
   'examprep',
   'selfstudy',
 ];
 
 // ── Scoring Constants ─────────────────────────────────────────────────────────
 const SCORES = {
-  IS_REEL: 20,
+  IS_REEL: 30,               // Reels are the primary discovery format
   IS_CAROUSEL: 10,
   POV_HOOK: 15,
-  EMOTIONAL_CAPTION: 10,
-  STUDY_CREATOR: 20,
+  EMOTIONAL_HOOK: 15,        // Strong hook phrase (beyond just "pov")
+  MOTIVATIONAL_KW_PER_MATCH: 5,  // Per motivational keyword, capped
+  MOTIVATIONAL_KW_CAP: 20,  // Max from this source
+  STUDY_CREATOR: 20,         // student / educational creator
+  PRODUCTIVITY_CREATOR: 25,  // productivity/discipline-focused creator (new tier)
   HIGH_HASHTAG_RELEVANCE: 15,
   COACHING_PENALTY: -50,
 };
@@ -75,11 +96,17 @@ const hasCoachingKeyword = (caption = '') => {
 
 /**
  * Compute the content score and breakdown for a single filtered post.
+ * Recency and cross-hashtag bonuses are injected from outside (trendingService).
  *
  * @param {Object} filteredPost - Post with _filter metadata attached by filterService
+ * @param {Object} [trendingMeta] - Optional trending metadata from trendingService
+ * @param {number} [trendingMeta.recencyBonus]
+ * @param {number} [trendingMeta.crossHashtagBonus]
+ * @param {number} [trendingMeta.crossHashtagCount]
+ * @param {string[]} [trendingMeta.crossHashtagTags]
  * @returns {Object} { contentScore, scoreBreakdown, targetHashtagMatches }
  */
-const computeScore = (filteredPost) => {
+const computeScore = (filteredPost, trendingMeta = {}) => {
   const meta = filteredPost._filter || {};
   const caption = filteredPost.caption || filteredPost.caption?.text || '';
   const hashtags = filteredPost.hashtags || [];
@@ -88,13 +115,17 @@ const computeScore = (filteredPost) => {
     isReel: 0,
     isCarousel: 0,
     povHook: 0,
-    emotionalCaption: 0,
+    emotionalHook: 0,
+    motivationalLanguage: 0,
     studyCreator: 0,
+    productivityCreator: 0,
     hashtagRelevance: 0,
+    recencyBonus: trendingMeta.recencyBonus || 0,
+    crossHashtagBonus: trendingMeta.crossHashtagBonus || 0,
     coachingPenalty: 0,
   };
 
-  // +20 Reel
+  // +30 Reel (upgraded from +20)
   if (meta.isReel) {
     breakdown.isReel = SCORES.IS_REEL;
   }
@@ -109,14 +140,26 @@ const computeScore = (filteredPost) => {
     breakdown.povHook = SCORES.POV_HOOK;
   }
 
-  // +10 Emotional/motivational caption
+  // +15 Emotional hook phrase (additive with POV if both present)
   if (meta.hasEmotionalHook) {
-    breakdown.emotionalCaption = SCORES.EMOTIONAL_CAPTION;
+    breakdown.emotionalHook = SCORES.EMOTIONAL_HOOK;
   }
+
+  // +5 per motivational keyword (capped at +20)
+  const motScore = Math.min(
+    (meta.motivationalScore || 0) * SCORES.MOTIVATIONAL_KW_PER_MATCH,
+    SCORES.MOTIVATIONAL_KW_CAP
+  );
+  breakdown.motivationalLanguage = motScore;
 
   // +20 Student or educational creator
   if (meta.creatorType === 'student' || meta.creatorType === 'educational') {
     breakdown.studyCreator = SCORES.STUDY_CREATOR;
+  }
+
+  // +25 Productivity/discipline creator (new higher tier)
+  if (meta.creatorType === 'productivity_creator') {
+    breakdown.productivityCreator = SCORES.PRODUCTIVITY_CREATOR;
   }
 
   // +15 High hashtag relevance
@@ -136,24 +179,38 @@ const computeScore = (filteredPost) => {
   // Clamp at 0 minimum
   const contentScore = Math.max(0, rawScore);
 
-  return { contentScore, scoreBreakdown: breakdown, targetHashtagMatches: matched };
+  return {
+    contentScore,
+    scoreBreakdown: breakdown,
+    targetHashtagMatches: matched,
+    crossHashtagCount: trendingMeta.crossHashtagCount || 0,
+    crossHashtagTags: trendingMeta.crossHashtagTags || [],
+    recencyLabel: trendingMeta.recencyLabel || 'unknown',
+  };
 };
 
 /**
  * Apply scoring to an array of filtered posts.
+ * Each post may optionally carry a _trending field injected by the pipeline.
  *
- * @param {Array<Object>} filteredPosts - Posts with _filter metadata
+ * @param {Array<Object>} filteredPosts - Posts with _filter (and optionally _trending) metadata
  * @returns {Array<Object>} Posts enriched with _score metadata, sorted desc
  */
 const rankPosts = (filteredPosts) => {
   const scored = filteredPosts.map((post) => {
-    const { contentScore, scoreBreakdown, targetHashtagMatches } = computeScore(post);
+    const trendingMeta = post._trending || {};
+    const { contentScore, scoreBreakdown, targetHashtagMatches, crossHashtagCount, crossHashtagTags, recencyLabel } =
+      computeScore(post, trendingMeta);
+
     return {
       ...post,
       _score: {
         contentScore,
         scoreBreakdown,
         targetHashtagMatches,
+        crossHashtagCount,
+        crossHashtagTags,
+        recencyLabel,
       },
     };
   });

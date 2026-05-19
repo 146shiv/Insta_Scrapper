@@ -24,7 +24,7 @@ let isRunning = false;
 const getDefaultHashtags = () => {
   const raw =
     process.env.DEFAULT_HASHTAGS ||
-    'studygram,studywithme,neetprep,jee2026,upsc,productivity,deepwork,notetaking';
+    'productivity,studymotivation,discipline,deepwork,selfimprovement,focus,consistency,grindmindset,nightstudy,dopaminedetox,monkmode,studentlife,studygram,studywithme';
   return raw
     .split(',')
     .map((h) => h.trim().toLowerCase().replace(/^#/, ''))
